@@ -1,0 +1,36 @@
+# main への push で日記サイトをビルドし、Cloudflare Pages に公開する。
+# 必要な Secrets: CLOUDFLARE_API_TOKEN（権限: Cloudflare Pages の編集）, CLOUDFLARE_ACCOUNT_ID
+name: デプロイ
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  PROJECT_NAME: mugiwe-diary
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: サイトをビルド
+        run: python3 tools/build.py
+
+      # 初回だけプロジェクトを作る（2回目以降は「すでにある」と言われるので無視する）
+      - name: Pages プロジェクトを用意
+        run: npx --yes wrangler@4 pages project create "$PROJECT_NAME" --production-branch=main || true
+
+      - name: Cloudflare Pages に公開
+        run: npx --yes wrangler@4 pages deploy dist --project-name="$PROJECT_NAME" --branch=main
