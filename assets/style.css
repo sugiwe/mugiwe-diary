@@ -1,0 +1,38 @@
+/* むぎえの日記 - 最小のスタイル。麦色をアクセントに。 */
+:root {
+  --ink: #33302a;
+  --paper: #fdfbf6;
+  --accent: #a87b1f; /* 麦色 */
+  --muted: #8a8378;
+  --line: #e6dfd0;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0 auto;
+  max-width: 42rem;
+  padding: 2rem 1.25rem 4rem;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Hiragino Mincho ProN", "Hiragino Mincho Pro", "Yu Mincho",
+    "YuMincho", "Noto Serif JP", serif;
+  line-height: 1.9;
+  font-size: 1.05rem;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.site-header { border-bottom: 1px solid var(--line); padding-bottom: 1rem; margin-bottom: 2rem; }
+.site-title { font-size: 1.6rem; font-weight: bold; color: var(--ink); }
+.site-tagline { color: var(--muted); margin: 0.25rem 0; font-size: 0.95rem; }
+.site-header nav { font-size: 0.9rem; }
+.entry-list { list-style: none; padding: 0; }
+.entry-list li { padding: 0.6rem 0; border-bottom: 1px dotted var(--line); }
+.entry-date { color: var(--muted); font-size: 0.9rem; }
+.phrase, .phrase-inline { color: var(--accent); }
+.phrase { font-size: 1.1rem; margin-top: 0; }
+article h1 { font-size: 1.5rem; line-height: 1.5; }
+article img { max-width: 100%; height: auto; }
+blockquote { border-left: 3px solid var(--line); margin-left: 0; padding-left: 1rem; color: var(--muted); }
+pre { background: #f3efe4; padding: 1rem; overflow-x: auto; font-size: 0.9rem; }
+code { font-family: ui-monospace, Menlo, monospace; }
+.entry-nav { margin-top: 3rem; font-size: 0.95rem; }
+footer { margin-top: 4rem; border-top: 1px solid var(--line); padding-top: 1rem; color: var(--muted); font-size: 0.9rem; }
