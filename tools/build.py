@@ -140,16 +140,20 @@ def page_shell(title: str, body: str, description: str = "") -> str:
 <link rel="alternate" type="application/rss+xml" title="{SITE_TITLE}" href="/feed.xml">
 </head>
 <body>
+<a class="skip-link" href="#main">本文へ</a>
 <header class="site-header">
-  <a class="site-title" href="/">{SITE_TITLE}</a>
-  <p class="site-tagline">{SITE_TAGLINE}</p>
-  <nav><a href="/about.html">むぎえについて</a> · <a href="/feed.xml">RSS</a></nav>
+  <div class="site-identity">
+    <a class="site-title" href="/">{SITE_TITLE}</a>
+    <p class="site-tagline">{SITE_TAGLINE}</p>
+  </div>
+  <nav aria-label="サイト案内"><a href="/about.html">むぎえについて</a><a href="/feed.xml">RSS ↗</a></nav>
 </header>
-<main>
+<main id="main">
 {body}
 </main>
 <footer>
-  <p>書いている人: {AUTHOR}（mugiwe） · 本編: <a href="https://sugiwe.net">sugiwe.net</a></p>
+  <p>{AUTHOR} / mugiwe</p>
+  <a href="https://sugiwe.net">本編 sugiwe.net ↗</a>
 </footer>
 </body>
 </html>
@@ -179,12 +183,14 @@ def build() -> None:
             nav.append(f'<a href="/entries/{nxt["date"]}.html">{nxt["date"]} →</a>')
         phrase_html = f'<p class="phrase">{html.escape(e["phrase"])}</p>' if e["phrase"] else ""
         body = f"""<article>
-<p class="entry-date">{e["date"]}</p>
+<header class="article-header">
+<time class="entry-date" datetime="{e["date"]}">{e["date"].replace("-", ".")}</time>
 <h1>{html.escape(e["title"])}</h1>
 {phrase_html}
-{e["html"]}
+</header>
+<div class="prose">{e["html"]}</div>
 </article>
-<nav class="entry-nav">{" · ".join(nav)}</nav>"""
+<nav class="entry-nav" aria-label="日記の移動"><a href="/">日記一覧へ</a>{"".join(nav)}</nav>"""
         (DIST / "entries" / f'{e["date"]}.html').write_text(
             page_shell(f'{e["title"]} | {SITE_TITLE}', body, e["phrase"]), encoding="utf-8"
         )
@@ -192,12 +198,14 @@ def build() -> None:
     # 一覧ページ
     items = []
     for e in entries:
-        phrase_html = f' <span class="phrase-inline">{html.escape(e["phrase"])}</span>' if e["phrase"] else ""
+        phrase_html = f'<span class="phrase-inline">{html.escape(e["phrase"])}</span>' if e["phrase"] else ""
         items.append(
-            f'<li><a href="/entries/{e["date"]}.html"><span class="entry-date">{e["date"]}</span> '
-            f'{html.escape(e["title"])}</a>{phrase_html}</li>'
+            f'<li><a class="entry-link" href="/entries/{e["date"]}.html">'
+            f'<time class="entry-date" datetime="{e["date"]}">{e["date"].replace("-", ".")}</time>'
+            f'<span class="entry-summary"><span class="entry-title">{html.escape(e["title"])}</span>'
+            f'{phrase_html}</span><span class="entry-arrow" aria-hidden="true">↗</span></a></li>'
         )
-    index_body = '<ul class="entry-list">\n' + "\n".join(items) + "\n</ul>"
+    index_body = '<section aria-labelledby="diary-heading"><div class="section-heading"><h1 id="diary-heading">日々の記録</h1><span>むぎえの視点から</span></div><ul class="entry-list">\n' + "\n".join(items) + "\n</ul></section>"
     (DIST / "index.html").write_text(
         page_shell(SITE_TITLE, index_body), encoding="utf-8"
     )
@@ -207,7 +215,7 @@ def build() -> None:
     if about_md.exists():
         about_html = markdown_to_html(about_md.read_text(encoding="utf-8"))
         (DIST / "about.html").write_text(
-            page_shell(f"むぎえについて | {SITE_TITLE}", about_html), encoding="utf-8"
+            page_shell(f"むぎえについて | {SITE_TITLE}", f'<article class="about prose">{about_html}</article>'), encoding="utf-8"
         )
 
     # RSS フィード
