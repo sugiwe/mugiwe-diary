@@ -18,6 +18,7 @@
     各ページには OGP メタタグを出力する（記事の og:image は本文の最初の画像）。
 """
 
+import hashlib
 import html
 import re
 import shutil
@@ -135,6 +136,21 @@ def markdown_to_html(md: str) -> str:
     return "\n".join(blocks)
 
 
+
+def article_html(body_html: str) -> str:
+    """最初の画像を記事本文の冒頭へ移し、元の位置には重複させない。"""
+    first = re.search(r"<img\b[^>]*>", body_html)
+    if first is None:
+        return body_html
+    illustration = first.group(0)
+    standalone = re.compile(r"<p>\s*" + re.escape(illustration) + r"\s*</p>")
+    if standalone.search(body_html):
+        remaining = standalone.sub("", body_html, count=1)
+    else:
+        remaining = body_html[:first.start()] + body_html[first.end():]
+    return f'<figure class="article-illustration">{illustration}</figure>\n{remaining.lstrip()}'
+
+
 def parse_entry(path: Path) -> dict:
     text = path.read_text(encoding="utf-8")
     date_str = path.stem  # YYYY-MM-DD
@@ -149,9 +165,13 @@ def parse_entry(path: Path) -> dict:
     body_md = re.sub(r"^# .*\n", "", text, count=1)
     # og:image 用に、本文の最初の画像を絶対URLにする
     image = ""
-    im = re.search(r"!\[[^\]]*\]\(([^)\s]+)\)", body_md)
+    thumbnail = ""
+    image_alt = ""
+    im = re.search(r"!\[([^\]]*)\]\(([^)\s]+)\)", body_md)
     if im:
-        src = im.group(1)
+        src = im.group(2)
+        image_alt = im.group(1)
+        thumbnail = src if src.startswith(("/", "https://", "http://")) else f"/entries/{src}"
         if src.startswith(("http://", "https://")):
             image = src
         elif src.startswith("/"):
@@ -165,10 +185,12 @@ def parse_entry(path: Path) -> dict:
         "html": markdown_to_html(body_md),
         "url": f"{BASE_URL}/entries/{date_str}.html",
         "image": image,
+        "thumbnail": thumbnail,
+        "image_alt": image_alt,
     }
 
 
-def page_shell(title: str, body: str, description: str = "", og: dict | None = None) -> str:
+def page_shell(title: str, body: str, description: str = "", og: dict | None = None, *, article: bool = False) -> str:
     desc = html.escape(description or SITE_TAGLINE)
     og = og or {}
     og_title = html.escape(og.get("title") or title)
@@ -198,22 +220,16 @@ def page_shell(title: str, body: str, description: str = "", og: dict | None = N
 <link rel="stylesheet" href="/assets/style.css">
 <link rel="alternate" type="application/rss+xml" title="{SITE_TITLE}" href="/feed.xml">
 </head>
-<body>
+<body class="g{' read-page' if article else ''}">
 <a class="skip-link" href="#main">本文へ</a>
-<header class="site-header">
-  <div class="site-identity">
-    <a class="site-title" href="/">{SITE_TITLE}</a>
-    <p class="site-tagline">{SITE_TAGLINE}</p>
-  </div>
-  <nav aria-label="サイト案内"><a href="/about.html">むぎえについて</a><a href="/feed.xml">RSS ↗</a></nav>
+<header class="top">
+  <a class="brand" href="/">{SITE_TITLE}</a>
+  <nav aria-label="サイト案内"><a href="/about.html">書き手</a><a href="/feed.xml">RSS ↗</a></nav>
 </header>
 <main id="main">
 {body}
 </main>
-<footer>
-  <p>{AUTHOR} / mugiwe</p>
-  <a href="https://sugiwe.net">本編 sugiwe.net ↗</a>
-</footer>
+<footer class="footer"><span>{AUTHOR} / Muse</span><a href="https://sugiwe.net">sugiwe.net ↗</a></footer>
 </body>
 </html>
 """
@@ -230,57 +246,53 @@ def build() -> None:
     entries = [parse_entry(p) for p in sorted(ROOT.glob("*.md")) if ENTRY_RE.match(p.name)]
     entries.sort(key=lambda e: e["date"], reverse=True)
 
-    # 記事ページ
-    asc = list(reversed(entries))
-    for idx, e in enumerate(asc):
-        nav = []
-        if idx > 0:
-            prev = asc[idx - 1]
-            nav.append(f'<a href="/entries/{prev["date"]}.html">← {prev["date"]}</a>')
-        if idx < len(asc) - 1:
-            nxt = asc[idx + 1]
-            nav.append(f'<a href="/entries/{nxt["date"]}.html">{nxt["date"]} →</a>')
+    # 全記事の日付順から隣接リンクを毎回組み直す。
+    for idx, e in enumerate(entries):
+        def neighbor(target: dict | None, kind: str) -> str:
+            if target is None:
+                return f'<span class="nav-{kind}" aria-hidden="true"></span>'
+            date = f'<time datetime="{target["date"]}">{target["date"].replace("-", ".")}</time>'
+            label = f'← {date}' if kind == "newer" else f'{date} →'
+            return f'<a class="nav-{kind}" href="/entries/{target["date"]}.html">{label}</a>'
+        newer = entries[idx - 1] if idx > 0 else None
+        older = entries[idx + 1] if idx + 1 < len(entries) else None
+        nav = neighbor(newer, "newer") + '<a class="nav-index" href="/">日記一覧</a>' + neighbor(older, "older")
         phrase_html = f'<p class="phrase">{html.escape(e["phrase"])}</p>' if e["phrase"] else ""
-        body = f"""<article>
-<header class="article-header">
-<time class="entry-date" datetime="{e["date"]}">{e["date"].replace("-", ".")}</time>
-<h1>{html.escape(e["title"])}</h1>
-{phrase_html}
-</header>
-<div class="prose">{e["html"]}</div>
-</article>
-<nav class="entry-nav" aria-label="日記の移動"><a href="/">日記一覧へ</a>{"".join(nav)}</nav>"""
+        body = f'''<article class="reading"><header>
+<time class="date" datetime="{e["date"]}">{e["date"].replace("-", ".")}</time>
+<h1>{html.escape(e["title"])}</h1>{phrase_html}
+<div class="byline"><img src="/assets/muse.webp" alt="">むぎえ <small>/ Muse</small></div>
+</header><div class="prose">{article_html(e["html"])}</div>
+<nav class="read-nav" aria-label="日記の移動">{nav}</nav></article>'''
         (DIST / "entries" / f'{e["date"]}.html').write_text(
-            page_shell(
-                f'{e["title"]} | {SITE_TITLE}',
-                body,
-                e["phrase"],
-                og={
-                    "title": e["title"],
-                    "description": e["phrase"],
-                    "url": e["url"],
-                    "type": "article",
-                    "image": e["image"],
-                },
-            ),
-            encoding="utf-8",
-        )
+            page_shell(f'{e["title"]} | {SITE_TITLE}', body, e["phrase"],
+                       og={"title": e["title"], "description": e["phrase"], "url": e["url"], "type": "article", "image": e["image"]}, article=True), encoding="utf-8")
 
-    # 一覧ページ
+    # 記事の最初の画像と一言を展示する。色・角度は日付から固定する。
     items = []
-    for e in entries:
-        phrase_html = f'<span class="phrase-inline">{html.escape(e["phrase"])}</span>' if e["phrase"] else ""
-        items.append(
-            f'<li><a class="entry-link" href="/entries/{e["date"]}.html">'
-            f'<time class="entry-date" datetime="{e["date"]}">{e["date"].replace("-", ".")}</time>'
-            f'<span class="entry-summary"><span class="entry-title">{html.escape(e["title"])}</span>'
-            f'{phrase_html}</span><span class="entry-arrow" aria-hidden="true">↗</span></a></li>'
-        )
-    index_body = '<section aria-labelledby="diary-heading"><div class="section-heading"><h1 id="diary-heading">日々の記録</h1><span>むぎえの視点から</span></div><ul class="entry-list">\n' + "\n".join(items) + "\n</ul></section>"
-    (DIST / "index.html").write_text(
-        page_shell(SITE_TITLE, index_body, og={"title": SITE_TITLE, "url": f"{BASE_URL}/"}),
-        encoding="utf-8",
-    )
+    colors = ["#b6a2dc", "#c8dd42", "#efb29c", "#a9c8ba", "#e7bb68", "#a6b6dc"]
+    for idx, e in enumerate(entries):
+        seed = int(hashlib.sha256(e["date"].encode()).hexdigest()[:8], 16)
+        angle = (5 + seed % 6) * (1 if (seed // 6) % 2 else -1)
+        backing = colors[int(e["date"].replace("-", "")) % len(colors)]
+        if e["thumbnail"]:
+            face = f'<img src="{html.escape(e["thumbnail"], quote=True)}" alt="{html.escape(e["image_alt"], quote=True)}" loading="{"eager" if idx == 0 else "lazy"}">'
+        else:
+            face = '<div class="no-photo" role="img" aria-label="画像なし"><span>no photo</span></div>'
+        position = ""
+        if idx >= 8:
+            row = 6 + (idx - 8) // 2
+            col = "8 / 12" if idx % 2 == 0 else "2 / 6"
+            position = f' style="--gallery-column:{col};--gallery-row:{row};--gallery-offset:{0 if idx % 2 == 0 else 60}px"'
+        items.append(f'''<a class="exhibit" href="/entries/{e["date"]}.html"{position}>
+<div class="print" style="--backing:{backing};--backing-angle:{angle}deg">{face}<span class="photo-date" aria-hidden="true">{e["date"].replace("-", "")}</span></div>
+<div class="caption"><time datetime="{e["date"]}">{e["date"].replace("-", ".")}</time><span class="caption-phrase">{html.escape(e["phrase"])}</span></div>
+<h2>{html.escape(e["title"])}</h2></a>''')
+    end_row = 5 if len(entries) <= 7 else (6 if len(entries) == 8 else 6 + (len(entries) - 8 + 1) // 2)
+    index_body = '<h1 class="visually-hidden">むぎえの日記</h1><section class="wall-head" aria-label="サイト紹介"><p>むぎえの日記は、AIエージェントMuseによるsugiweの日記の副読本です。</p></section>'
+    index_body += '<section class="wall" aria-label="日記の一覧">' + "\n".join(items)
+    index_body += f'<aside class="wall-end" style="--gallery-end-row:{end_row}"><img src="/assets/muse.webp" alt="Museのアバター"><p>書き手：むぎえ<br>AIエージェント Muse<br><span class="sample-note">sugiweの日記の副読本</span></p></aside></section>'
+    (DIST / "index.html").write_text(page_shell(SITE_TITLE, index_body, og={"title": SITE_TITLE, "url": f"{BASE_URL}/"}), encoding="utf-8")
 
     # about ページ
     about_md = ROOT / "about.md"
@@ -289,8 +301,8 @@ def build() -> None:
         (DIST / "about.html").write_text(
             page_shell(
                 f"むぎえについて | {SITE_TITLE}",
-                f'<article class="about prose">{about_html}</article>',
-                og={"title": "むぎえについて", "url": f"{BASE_URL}/about.html"},
+                f'<article class="reading"><div class="prose">{about_html}</div><nav class="read-nav"><a class="nav-index" href="/">日記一覧</a></nav></article>',
+                og={"title": "むぎえについて", "url": f"{BASE_URL}/about.html"}, article=True,
             ),
             encoding="utf-8",
         )
