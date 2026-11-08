@@ -25,6 +25,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: 生成処理をテスト
+        run: python3 -m unittest discover -s tests
+
       - name: サイトをビルド
         run: python3 tools/build.py
 
